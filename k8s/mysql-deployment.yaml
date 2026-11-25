@@ -1,0 +1,50 @@
+# Headless service: clusterIP None means DNS resolves "mysql" straight to the
+# pod IP, which is what a single stateful database instance wants.
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+spec:
+  ports:
+    - port: 3306
+  selector:
+    app: mysql
+  clusterIP: None
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql
+spec:
+  selector:
+    matchLabels:
+      app: mysql
+  # Recreate instead of RollingUpdate: the old pod must release the
+  # ReadWriteOnce volume before a new one can mount it.
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+        # mysql:9, matching the Docker half of the lab.
+        - image: mysql:9
+          name: mysql
+          env:
+            # Use a Secret in real usage.
+            - name: MYSQL_ROOT_PASSWORD
+              value: root
+            - name: MYSQL_DATABASE
+              value: booksDb
+          ports:
+            - containerPort: 3306
+              name: mysql
+          volumeMounts:
+            - name: mysql-persistent-storage
+              mountPath: /var/lib/mysql
+      volumes:
+        - name: mysql-persistent-storage
+          persistentVolumeClaim:
+            claimName: mysql-data

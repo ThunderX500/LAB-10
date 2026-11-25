@@ -1,0 +1,29 @@
+# Persistent storage for MySQL: a manually managed local volume and the claim
+# that binds to it. Both carry storageClassName "manual" so the claim binds to
+# this volume instead of being satisfied by Minikube's default provisioner.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: mysql-data
+  labels:
+    type: local
+spec:
+  storageClassName: manual
+  capacity:
+    storage: 100Mi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: "/mnt/data"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mysql-data
+spec:
+  storageClassName: manual
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Mi
