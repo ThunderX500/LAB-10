@@ -39,6 +39,11 @@ spec:
                 command: [ "sh", "-c", "sleep 5" ]
           ports:
             - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /assets/env.json
+              port: 80
+            periodSeconds: 5
           env:
             # Read by the browser, not by the pod, so it points at the local
             # port-forward of the booksserver service.

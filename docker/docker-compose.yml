@@ -6,14 +6,16 @@ services:
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: root
+      MYSQL_ROOT_HOST: "%"
       MYSQL_DATABASE: booksDb
     networks:
       - mysql-network
     healthcheck:
-      test: ["CMD-SHELL", "mysql --user=root --password=root --execute='SHOW DATABASES;'"]
-      interval: 30s
-      timeout: 10s
-      retries: 10
+      test: ["CMD", "mysql", "--protocol=TCP", "-h", "127.0.0.1", "-uroot", "-proot", "-D", "booksDb", "-e", "SELECT 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 30s
     ports:
       - "3306:3306"
 
@@ -45,8 +47,10 @@ services:
     ports:
       - "4100:80"
     depends_on:
-      - mysql
-      - booksserver
+      mysql:
+        condition: service_healthy
+      booksserver:
+        condition: service_healthy
 
 networks:
   mysql-network:

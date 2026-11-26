@@ -14,8 +14,7 @@ import seg3x02.booksrestapi.repository.BookRepository
 
 /**
  * Populates the database with sample authors, books, bios and orders at
- * startup. The in-memory H2 database is empty on every run, so this is what
- * gives the API something to return.
+ * startup. Persistent MySQL databases are seeded only when empty.
  *
  * Seeding happens here rather than in a data.sql script because the script
  * initializer runs before Hibernate creates the schema unless

@@ -36,11 +36,23 @@ spec:
             # Use a Secret in real usage.
             - name: MYSQL_ROOT_PASSWORD
               value: root
+            - name: MYSQL_ROOT_HOST
+              value: "%"
             - name: MYSQL_DATABASE
               value: booksDb
           ports:
             - containerPort: 3306
               name: mysql
+          startupProbe:
+            exec:
+              command: ["mysql", "--protocol=TCP", "-h", "127.0.0.1", "-uroot", "-proot", "-D", "booksDb", "-e", "SELECT 1"]
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            exec:
+              command: ["mysql", "--protocol=TCP", "-h", "127.0.0.1", "-uroot", "-proot", "-D", "booksDb", "-e", "SELECT 1"]
+            periodSeconds: 5
+            timeoutSeconds: 3
           volumeMounts:
             - name: mysql-persistent-storage
               mountPath: /var/lib/mysql

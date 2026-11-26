@@ -9,12 +9,14 @@ metadata:
     type: local
 spec:
   storageClassName: manual
+  persistentVolumeReclaimPolicy: Retain
   capacity:
-    storage: 100Mi
+    storage: 1Gi
   accessModes:
     - ReadWriteOnce
   hostPath:
-    path: "/mnt/data"
+    path: "/mnt/data/lab10-mysql"
+    type: DirectoryOrCreate
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -22,8 +24,9 @@ metadata:
   name: mysql-data
 spec:
   storageClassName: manual
+  volumeName: mysql-data
   accessModes:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 100Mi
+      storage: 1Gi

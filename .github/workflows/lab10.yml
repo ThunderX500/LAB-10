@@ -1,0 +1,100 @@
+name: Lab 10 integration tests
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build both Docker images
+        run: |
+          docker build -t books-rest-api:latest ./books-rest-api
+          docker build -t books-api-client:latest ./bookstore-client
+          mkdir -p evidence
+      - name: Manual Docker (Q1 and Q2)
+        run: |
+          set -euxo pipefail
+          docker network create mysql-network
+          docker run -d --name mysqldb --network mysql-network -v mysql-data:/var/lib/mysql -e MYSQL_ROOT_PASSWORD=root -e MYSQL_ROOT_HOST=% -e MYSQL_DATABASE=booksDb mysql:9
+          for i in {1..90}; do
+            if docker exec mysqldb mysql --protocol=TCP -h 127.0.0.1 -uroot -proot -D booksDb -e 'SELECT 1'; then break; fi
+            sleep 2
+          done
+          docker exec mysqldb mysql --protocol=TCP -h 127.0.0.1 -uroot -proot -D booksDb -e 'SELECT 1'
+          docker run -d --name booksserver --network mysql-network -e MYSQL_USER=root -e MYSQL_PASSWORD=root -e MYSQL_DB=booksDb -e MYSQL_HOST=mysqldb -p 8080:8080 books-rest-api:latest
+          curl -fsS --retry 90 --retry-delay 2 --retry-all-errors http://localhost:8080/actuator/health/readiness
+          docker container ls | tee evidence/Q1.txt
+          docker run -d --name booksclient -e API_URL=http://localhost:8080/books-api/ -p 4100:80 books-api-client:latest
+          bash scripts/smoke-check.sh
+          docker container ls | tee evidence/Q2.txt
+          docker rm -f booksclient booksserver mysqldb
+      - name: Docker Compose (Q3)
+        run: |
+          set -euxo pipefail
+          docker compose -f docker/docker-compose.yml config --quiet
+          docker compose -f docker/docker-compose.yml up -d --build 2>&1 | tee evidence/Q3.txt
+          bash scripts/smoke-check.sh
+          docker compose -f docker/docker-compose.yml ps
+          docker compose -f docker/docker-compose.yml down
+      - name: Install and start Minikube
+        run: |
+          set -euxo pipefail
+          curl -fsSL https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64 -o /tmp/minikube
+          sudo install /tmp/minikube /usr/local/bin/minikube
+          minikube start --driver=docker --cpus=2 --memory=4096
+          minikube image load books-rest-api:latest
+          minikube image load books-api-client:latest
+      - name: Kubernetes (Q4 to Q6)
+        run: |
+          set -euxo pipefail
+          k() { minikube kubectl -- "$@"; }
+          k apply -f k8s | tee evidence/Q4.txt
+          k rollout status deployment/mysql --timeout=6m
+          k rollout status deployment/booksserver --timeout=6m
+          k scale deployment/booksserver --replicas=2
+          k rollout status deployment/booksserver --timeout=6m
+          k rollout status deployment/booksapp --timeout=6m
+          k get deployments | tee evidence/Q5.txt
+          k port-forward service/booksserver 8080:8080 >/tmp/api-forward.log 2>&1 &
+          api_pid=$!
+          k port-forward service/booksapp 4100:4100 >/tmp/client-forward.log 2>&1 &
+          client_pid=$!
+          trap 'kill "$api_pid" "$client_pid" 2>/dev/null || true' EXIT
+          bash scripts/smoke-check.sh
+          k get pods | tee evidence/Q6.txt
+          old_pod="$(k get pods -l app=booksserver -o jsonpath='{.items[0].metadata.name}')"
+          k delete pod "$old_pod"
+          k rollout status deployment/booksserver --timeout=6m
+          k get pods -l app=booksserver | tee evidence/replacement.txt
+          k get pods -l app=booksserver -o json | python3 -c 'import json,sys; pods=json.load(sys.stdin)["items"]; assert len(pods)==2; assert all(p["metadata"]["name"]!=sys.argv[1] for p in pods); assert all(p["status"]["phase"]=="Running" for p in pods)' "$old_pod"
+      - name: Diagnostics
+        if: failure()
+        run: |
+          docker ps -a || true
+          docker logs booksserver || true
+          docker logs mysqldb || true
+          docker compose -f docker/docker-compose.yml logs || true
+          minikube kubectl -- get pods -o wide || true
+          minikube kubectl -- describe pods || true
+          minikube kubectl -- logs -l app=booksserver --all-containers --tail=100 || true
+      - name: Upload actual command output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lab10-command-output
+          path: evidence/
+          if-no-files-found: ignore
+      - name: Clean up
+        if: always()
+        run: |
+          docker rm -f booksclient booksserver mysqldb || true
+          docker compose -f docker/docker-compose.yml down || true
+          if command -v minikube >/dev/null; then minikube delete || true; fi
